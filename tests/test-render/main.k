@@ -1,4 +1,4 @@
-import models.ai.com.ops.hops.stacks.v1alpha1 as stacksv1alpha1
+import models.ai.com.ops.hops.v1alpha1 as stacksv1alpha1
 import models.io.upbound.dev.meta.v1alpha1 as metav1alpha1
 import models.k8s.apimachinery.pkg.apis.meta.v1 as metav1
 
