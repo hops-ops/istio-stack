@@ -118,6 +118,25 @@ spec:
 | `gateways[].values` | object | `{}` | Per-gateway Helm values |
 | `gateways[].overrideAllValues` | object | | Replaces all gateway defaults |
 | `egress.allowedHosts` | string[] | `[]` | Hosts to allow egress to (enables REGISTRY_ONLY) |
+| `awsLoadBalancerController.enabled` | bool | `false` | Render AWS LBC NLB annotations on `LoadBalancer`-type gateway services |
+| `awsLoadBalancerController.scheme` | string | `internet-facing` | NLB scheme (`internet-facing` or `internal`) |
+| `awsLoadBalancerController.targetType` | string | `ip` | NLB target type (`ip` or `instance`) |
+| `awsLoadBalancerController.crossZoneEnabled` | bool | `true` | Enable NLB cross-zone load balancing |
+| `awsLoadBalancerController.additionalAnnotations` | map | `{}` | Extra service annotations merged with defaults |
+
+## AWS Load Balancer Controller Integration
+
+When `awsLoadBalancerController.enabled: true`, the stack adds NLB annotations to every `LoadBalancer`-typed gateway service so the [aws-lbc-stack](../../aws/lbc) provisions an NLB in TCP passthrough mode. TLS terminates inside the gateway pod (Istio), not at the NLB.
+
+```yaml
+spec:
+  clusterName: example-cluster
+  awsLoadBalancerController:
+    enabled: true
+    scheme: internet-facing   # or internal
+```
+
+This stack does NOT install the AWS Load Balancer Controller — install it separately via `aws-lbc-stack`.
 
 ## Development
 

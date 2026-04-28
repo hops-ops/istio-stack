@@ -26,7 +26,8 @@ generate-configuration:
 EXAMPLES := \
     examples/istiostacks/minimal.yaml:: \
     examples/istiostacks/standard.yaml:: \
-    examples/istiostacks/ha.yaml::
+    examples/istiostacks/ha.yaml:: \
+    examples/istiostacks/with-aws-lbc.yaml::
 
 # Render all examples (parallel execution, output shown per-job when complete)
 render\:all:

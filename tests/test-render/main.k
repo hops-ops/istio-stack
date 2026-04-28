@@ -77,12 +77,12 @@ _items = [
                 {
                     apiVersion = "helm.m.crossplane.io/v1beta1"
                     kind = "Release"
-                    metadata.name = "test-istio-istio-ingressgateway"
+                    metadata.name = "istio-ingressgateway"
                 }
                 {
                     apiVersion = "helm.m.crossplane.io/v1beta1"
                     kind = "Release"
-                    metadata.name = "test-istio-istio-egressgateway"
+                    metadata.name = "istio-egressgateway"
                 }
             ]
         }
@@ -181,7 +181,7 @@ _items = [
                 {
                     apiVersion = "helm.m.crossplane.io/v1beta1"
                     kind = "Release"
-                    metadata.name = "custom-gw-my-ingress"
+                    metadata.name = "my-ingress"
                 }
             ]
         }
@@ -218,6 +218,135 @@ _items = [
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
                     kind = "Object"
                     metadata.name = "egress-test-egress-api-github-com"
+                }
+            ]
+        }
+    }
+
+    # ==========================================================================
+    # Test 7a: AWS LBC releaseRef.name renders a Usage so the LBC release cannot
+    # be deleted while a LoadBalancer gateway still exists. ClusterIP gateways
+    # do NOT get a Usage. Requires gateway to be observed-ready.
+    # ==========================================================================
+    metav1alpha1.CompositionTest {
+        metadata.name = "aws-lbc-usage-protects-against-races"
+        spec = {
+            compositionPath = "apis/istiostacks/composition.yaml"
+            xrdPath = "apis/istiostacks/definition.yaml"
+            timeoutSeconds = 60
+            validate = False
+            xr = stacksv1alpha1.IstioStack {
+                metadata.name = "lbc-usage-test"
+                spec = {
+                    clusterName = "test-cluster"
+                    awsLoadBalancerController = {
+                        enabled = True
+                        releaseRef.name = "pat-local"
+                    }
+                }
+            }
+            observedResources = [
+                {
+                    apiVersion = "helm.m.crossplane.io/v1beta1"
+                    kind = "Release"
+                    metadata = {
+                        name = "placeholder-istiod"
+                        annotations = {"crossplane.io/composition-resource-name" = "helm-release-istiod"}
+                    }
+                    status.conditions = [
+                        {type = "Ready", status = "True"}
+                        {type = "Synced", status = "True"}
+                    ]
+                }
+                {
+                    apiVersion = "helm.m.crossplane.io/v1beta1"
+                    kind = "Release"
+                    metadata = {
+                        name = "placeholder-ingress"
+                        annotations = {"crossplane.io/composition-resource-name" = "helm-release-gateway-istio-ingressgateway"}
+                    }
+                    status.conditions = [
+                        {type = "Ready", status = "True"}
+                        {type = "Synced", status = "True"}
+                    ]
+                }
+                {
+                    apiVersion = "helm.m.crossplane.io/v1beta1"
+                    kind = "Release"
+                    metadata = {
+                        name = "placeholder-egress"
+                        annotations = {"crossplane.io/composition-resource-name" = "helm-release-gateway-istio-egressgateway"}
+                    }
+                    status.conditions = [
+                        {type = "Ready", status = "True"}
+                        {type = "Synced", status = "True"}
+                    ]
+                }
+            ]
+            assertResources = [
+                {
+                    apiVersion = "protection.crossplane.io/v1beta1"
+                    kind = "Usage"
+                    metadata.name = "delete-istio-ingressgateway-before-aws-lbc"
+                    spec = {
+                        replayDeletion = True
+                        of.resourceRef.name = "pat-local"
+                        by.resourceRef.name = "istio-ingressgateway"
+                    }
+                }
+            ]
+        }
+    }
+
+    # ==========================================================================
+    # Test 7: AWS LBC integration adds NLB annotations to LoadBalancer gateways
+    # only — ClusterIP gateways are skipped.
+    # ==========================================================================
+    metav1alpha1.CompositionTest {
+        metadata.name = "aws-lbc-annotations-on-loadbalancer-gateways"
+        spec = {
+            compositionPath = "apis/istiostacks/composition.yaml"
+            xrdPath = "apis/istiostacks/definition.yaml"
+            timeoutSeconds = 60
+            validate = False
+            xr = stacksv1alpha1.IstioStack {
+                metadata.name = "lbc-test"
+                spec = {
+                    clusterName = "test-cluster"
+                    awsLoadBalancerController = {
+                        enabled = True
+                        scheme = "internet-facing"
+                        targetType = "ip"
+                        crossZoneEnabled = True
+                    }
+                }
+            }
+            observedResources = _istiodReady
+            assertResources = [
+                {
+                    apiVersion = "helm.m.crossplane.io/v1beta1"
+                    kind = "Release"
+                    metadata.name = "istio-ingressgateway"
+                    spec.forProvider.values = {
+                        service = {
+                            type = "LoadBalancer"
+                            annotations = {
+                                "service.beta.kubernetes.io/aws-load-balancer-type" = "external"
+                                "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type" = "ip"
+                                "service.beta.kubernetes.io/aws-load-balancer-scheme" = "internet-facing"
+                                "service.beta.kubernetes.io/aws-load-balancer-backend-protocol" = "tcp"
+                                "service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled" = "true"
+                            }
+                        }
+                    }
+                }
+                {
+                    apiVersion = "helm.m.crossplane.io/v1beta1"
+                    kind = "Release"
+                    metadata.name = "istio-egressgateway"
+                    spec.forProvider.values = {
+                        service.type = "ClusterIP"
+                    }
                 }
             ]
         }

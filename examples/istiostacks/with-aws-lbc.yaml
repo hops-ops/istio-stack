@@ -1,0 +1,20 @@
+apiVersion: hops.ops.com.ai/v1alpha1
+kind: IstioStack
+metadata:
+  name: istio
+  namespace: example-env
+spec:
+  clusterName: example-cluster
+  labels:
+    team: platform
+  namespace: istio-system
+  gateways:
+  - name: istio-ingressgateway
+    type: LoadBalancer
+  - name: istio-egressgateway
+    type: ClusterIP
+  awsLoadBalancerController:
+    enabled: true
+    scheme: internet-facing
+    targetType: ip
+    crossZoneEnabled: true

@@ -74,6 +74,19 @@
 {{- $egressSpec := $spec.egress | default dict }}
 {{- $allowedHosts := $egressSpec.allowedHosts | default list }}
 
+# AWS Load Balancer Controller integration
+{{- $lbcSpec := $spec.awsLoadBalancerController | default dict }}
+{{- $lbcEnabled := $lbcSpec.enabled | default false }}
+{{- $lbcScheme := $lbcSpec.scheme | default "internet-facing" }}
+{{- $lbcTargetType := $lbcSpec.targetType | default "ip" }}
+{{- $lbcCrossZone := true }}
+{{- if hasKey $lbcSpec "crossZoneEnabled" }}
+  {{- $lbcCrossZone = $lbcSpec.crossZoneEnabled }}
+{{- end }}
+{{- $lbcExtraAnnotations := $lbcSpec.additionalAnnotations | default dict }}
+{{- $lbcReleaseRef := $lbcSpec.releaseRef | default dict }}
+{{- $lbcReleaseRefName := $lbcReleaseRef.name | default "" }}
+
 # ==============================================================================
 # Initialize $state namespace
 # ==============================================================================
@@ -98,6 +111,14 @@
       "gateways" $gateways
       "egress" (dict
         "allowedHosts" $allowedHosts
+      )
+      "awsLoadBalancerController" (dict
+        "enabled" $lbcEnabled
+        "scheme" $lbcScheme
+        "targetType" $lbcTargetType
+        "crossZoneEnabled" $lbcCrossZone
+        "additionalAnnotations" $lbcExtraAnnotations
+        "releaseRef" (dict "name" $lbcReleaseRefName)
       )
     )
   )

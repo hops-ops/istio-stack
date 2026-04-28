@@ -116,6 +116,44 @@ spec:
                     type: array
                     items:
                       type: string
+              awsLoadBalancerController:
+                description: AWS Load Balancer Controller integration. This stack does NOT install the controller — install it separately (see aws-lbc-stack). When enabled, NLB annotations are added to every LoadBalancer-typed gateway service so the controller provisions an NLB in TCP passthrough mode and TLS terminates inside the gateway pod (Istio).
+                type: object
+                properties:
+                  enabled:
+                    description: Whether to render LBC annotations on LoadBalancer-typed gateway services. Defaults to false.
+                    type: boolean
+                    default: false
+                  scheme:
+                    description: NLB scheme. Defaults to internet-facing.
+                    type: string
+                    enum:
+                    - internet-facing
+                    - internal
+                    default: internet-facing
+                  targetType:
+                    description: NLB target type. Defaults to ip (required for Fargate / EKS Auto Mode).
+                    type: string
+                    enum:
+                    - ip
+                    - instance
+                    default: ip
+                  crossZoneEnabled:
+                    description: Enable cross-zone load balancing on the NLB. Defaults to true.
+                    type: boolean
+                    default: true
+                  additionalAnnotations:
+                    description: Extra annotations merged into the gateway service (override or extend defaults). Useful for advanced LBC features (eip-allocations, attributes, etc.).
+                    type: object
+                    additionalProperties:
+                      type: string
+                  releaseRef:
+                    description: Reference to the AWS Load Balancer Controller helm Release (composed by aws-lbc-stack). When set, emits a Usage per LoadBalancer gateway so the LBC Release cannot be deleted while a gateway still exists — the controller must outlive the gateway services so it can clean up the NLBs they own.
+                    type: object
+                    properties:
+                      name:
+                        description: metadata.name of the LBC helm Release. With aws-lbc-stack defaults, this is the LBCStack XR's metadata.name.
+                        type: string
             required:
             - clusterName
           status:

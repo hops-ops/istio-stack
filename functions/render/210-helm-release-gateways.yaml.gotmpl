@@ -9,13 +9,30 @@
 # Gate on istiod readiness — the sidecar injector must be running
 # to mutate gateway pods and replace image: auto with the real proxy image
 {{- if $obs.istiod.ready }}
+{{- $lbc := $ist.awsLoadBalancerController }}
 {{- range $gw := $ist.gateways }}
+
+{{- /* Compute service annotations for AWS LBC integration on LoadBalancer gateways. */}}
+{{- /* TCP passthrough — TLS terminates inside the gateway pod (Istio), not at the NLB. */}}
+{{- $svcAnnotations := dict }}
+{{- if and $lbc.enabled (eq $gw.type "LoadBalancer") }}
+  {{- $svcAnnotations = dict
+    "service.beta.kubernetes.io/aws-load-balancer-type" "external"
+    "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type" $lbc.targetType
+    "service.beta.kubernetes.io/aws-load-balancer-scheme" $lbc.scheme
+    "service.beta.kubernetes.io/aws-load-balancer-backend-protocol" "tcp"
+    "service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled" (printf "%t" $lbc.crossZoneEnabled)
+  }}
+  {{- if $lbc.additionalAnnotations }}
+    {{- $svcAnnotations = merge $lbc.additionalAnnotations $svcAnnotations }}
+  {{- end }}
+{{- end }}
 
 ---
 apiVersion: helm.m.crossplane.io/v1beta1
 kind: Release
 metadata:
-  name: {{ $ist.name }}-{{ $gw.name }}
+  name: {{ $gw.name }}
   annotations:
     {{ setResourceNameAnnotation (printf "helm-release-gateway-%s" $gw.name) }}
   labels: {{ $ist.labels | toJson }}
@@ -34,6 +51,10 @@ spec:
     values:
       service:
         type: {{ $gw.type }}
+        {{- if $svcAnnotations }}
+        annotations:
+          {{- toYaml $svcAnnotations | nindent 10 }}
+        {{- end }}
         {{- if $gw.ports }}
         ports:
           {{- toYaml $gw.ports | nindent 10 }}
@@ -62,7 +83,7 @@ spec:
 apiVersion: protection.crossplane.io/v1beta1
 kind: Usage
 metadata:
-  name: {{ $ist.name }}-delete-{{ $gw.name }}-before-istiod
+  name: delete-{{ $gw.name }}-before-istiod
   annotations:
     {{ setResourceNameAnnotation (printf "usage-delete-%s-before-istiod" $gw.name) }}
 spec:
@@ -76,7 +97,35 @@ spec:
     apiVersion: helm.m.crossplane.io/v1beta1
     kind: Release
     resourceRef:
-      name: {{ $ist.name }}-{{ $gw.name }}
+      name: {{ $gw.name }}
+{{- end }}
+
+# ==============================================================================
+# Usage: delete LoadBalancer gateway before AWS LBC helm Release
+# Without this, simultaneous deletion of IstioStack + aws-lbc-stack can race —
+# if the LBC controller dies first, the gateway Service's NLB finalizer never
+# resolves and the NLB is orphaned in AWS.
+# ==============================================================================
+{{- if and $lbc.enabled $lbc.releaseRef.name (eq $gw.type "LoadBalancer") $gwObsReady }}
+---
+apiVersion: protection.crossplane.io/v1beta1
+kind: Usage
+metadata:
+  name: delete-{{ $gw.name }}-before-aws-lbc
+  annotations:
+    {{ setResourceNameAnnotation (printf "usage-delete-%s-before-aws-lbc" $gw.name) }}
+spec:
+  replayDeletion: true
+  of:
+    apiVersion: helm.m.crossplane.io/v1beta1
+    kind: Release
+    resourceRef:
+      name: {{ $lbc.releaseRef.name }}
+  by:
+    apiVersion: helm.m.crossplane.io/v1beta1
+    kind: Release
+    resourceRef:
+      name: {{ $gw.name }}
 {{- end }}
 
 {{- end }}{{/* range $gw */}}
