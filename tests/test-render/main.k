@@ -1,122 +1,160 @@
 import models.ai.com.ops.hops.v1alpha1 as stacksv1alpha1
 import models.io.upbound.dev.meta.v1alpha1 as metav1alpha1
-import models.k8s.apimachinery.pkg.apis.meta.v1 as metav1
 
 # ==============================================================================
-# Unit tests for Istio XRD
+# Unit tests for IstioStack XRD (ambient + Gateway API)
 #
-# Philosophy: Test YOUR API, not the provider's API.
+# Philosophy: test YOUR API, not the chart's internals.
 # - render/validate already checks provider schema correctness
-# - Tests should verify XRD spec fields produce expected behavior
+# - Tests verify XRD spec fields produce the expected composed-resource shape
 # ==============================================================================
-
-# ==============================================================================
-# Shared observedResources: istiod ready (required for gateway emission)
-# ==============================================================================
-_istiodReady = [
-    {
-        apiVersion = "helm.m.crossplane.io/v1beta1"
-        kind = "Release"
-        metadata = {
-            name = "placeholder-istiod"
-            annotations = {"crossplane.io/composition-resource-name" = "helm-release-istiod"}
-        }
-        status.conditions = [
-            {type = "Ready", status = "True"}
-            {type = "Synced", status = "True"}
-        ]
-    }
-]
 
 _items = [
     # ==========================================================================
-    # Test 1: Minimal input renders base and istiod (no gateways without istiod ready)
+    # Test 1: minimal claim renders the three core Helm releases (base, istiod,
+    # ztunnel) in ambient profile, plus the platform Gateway by default.
     # ==========================================================================
     metav1alpha1.CompositionTest {
-        metadata.name = "minimal-renders-base-and-istiod"
+        metadata.name = "minimal-renders-ambient-control-plane"
         spec = {
             compositionPath = "apis/istiostacks/composition.yaml"
             xrdPath = "apis/istiostacks/definition.yaml"
             timeoutSeconds = 60
             validate = False
             xr = stacksv1alpha1.IstioStack {
-                metadata.name = "test-istio"
-                spec.clusterName = "test-cluster"
+                metadata.name = "test"
+                spec.clusterName = "my-cluster"
             }
             assertResources = [
                 {
                     apiVersion = "helm.m.crossplane.io/v1beta1"
                     kind = "Release"
-                    metadata.name = "test-istio-base"
+                    metadata.name = "test-base"
+                    spec.forProvider = {
+                        chart = {
+                            name = "base"
+                            repository = "https://istio-release.storage.googleapis.com/charts"
+                            version = "1.29.2"
+                        }
+                        namespace = "istio-system"
+                    }
                 }
                 {
                     apiVersion = "helm.m.crossplane.io/v1beta1"
                     kind = "Release"
-                    metadata.name = "test-istio-istiod"
+                    metadata.name = "test-istiod"
+                    spec.forProvider = {
+                        chart.name = "istiod"
+                        chart.version = "1.29.2"
+                        namespace = "istio-system"
+                        values.profile = "ambient"
+                    }
+                }
+                {
+                    apiVersion = "helm.m.crossplane.io/v1beta1"
+                    kind = "Release"
+                    metadata.name = "test-ztunnel"
+                    spec.forProvider = {
+                        chart.name = "ztunnel"
+                        chart.version = "1.29.2"
+                        namespace = "istio-system"
+                    }
                 }
             ]
         }
     }
 
     # ==========================================================================
-    # Test 2: Gateways emitted once istiod is observed ready
+    # Test 2: chartVersion override applies to base, istiod, AND ztunnel.
     # ==========================================================================
     metav1alpha1.CompositionTest {
-        metadata.name = "gateways-after-istiod-ready"
+        metadata.name = "chart-version-applies-to-all-three-releases"
         spec = {
             compositionPath = "apis/istiostacks/composition.yaml"
             xrdPath = "apis/istiostacks/definition.yaml"
             timeoutSeconds = 60
             validate = False
             xr = stacksv1alpha1.IstioStack {
-                metadata.name = "test-istio"
-                spec.clusterName = "test-cluster"
-            }
-            observedResources = _istiodReady
-            assertResources = [
-                {
-                    apiVersion = "helm.m.crossplane.io/v1beta1"
-                    kind = "Release"
-                    metadata.name = "istio-ingressgateway"
-                }
-                {
-                    apiVersion = "helm.m.crossplane.io/v1beta1"
-                    kind = "Release"
-                    metadata.name = "istio-egressgateway"
-                }
-            ]
-        }
-    }
-
-    # ==========================================================================
-    # Test 3: Custom labels are applied and merged with defaults
-    # ==========================================================================
-    metav1alpha1.CompositionTest {
-        metadata.name = "custom-labels-merged-with-defaults"
-        spec = {
-            compositionPath = "apis/istiostacks/composition.yaml"
-            xrdPath = "apis/istiostacks/definition.yaml"
-            timeoutSeconds = 60
-            validate = False
-            xr = stacksv1alpha1.IstioStack {
-                metadata.name = "labeled-istio"
+                metadata.name = "test"
                 spec = {
-                    clusterName = "test-cluster"
-                    # labels uses x-kubernetes-preserve-unknown-fields, use untyped
-                    labels = {team = "platform", environment = "staging"}
+                    clusterName = "my-cluster"
+                    chartVersion = "1.30.0"
                 }
             }
             assertResources = [
                 {
                     apiVersion = "helm.m.crossplane.io/v1beta1"
                     kind = "Release"
-                    metadata = {
-                        name = "labeled-istio-istiod"
-                        labels = {
-                            "hops.ops.com.ai/managed" = "true"
-                            "hops.ops.com.ai/istiostack" = "labeled-istio"
-                            team = "platform"
-                            environment = "staging"
+                    metadata.name = "test-base"
+                    spec.forProvider.chart.version = "1.30.0"
+                }
+                {
+                    apiVersion = "helm.m.crossplane.io/v1beta1"
+                    kind = "Release"
+                    metadata.name = "test-istiod"
+                    spec.forProvider.chart.version = "1.30.0"
+                }
+                {
+                    apiVersion = "helm.m.crossplane.io/v1beta1"
+                    kind = "Release"
+                    metadata.name = "test-ztunnel"
+                    spec.forProvider.chart.version = "1.30.0"
+                }
+            ]
+        }
+    }
+
+    # ==========================================================================
+    # Test 3: ingressGateway emits a Gateway resource with the configured
+    # listeners and the requested gatewayClassName.
+    # ==========================================================================
+    metav1alpha1.CompositionTest {
+        metadata.name = "ingress-gateway-emits-gateway-resource"
+        spec = {
+            compositionPath = "apis/istiostacks/composition.yaml"
+            xrdPath = "apis/istiostacks/definition.yaml"
+            timeoutSeconds = 60
+            validate = False
+            xr = stacksv1alpha1.IstioStack {
+                metadata.name = "test"
+                spec = {
+                    clusterName = "my-cluster"
+                    ingressGateway = {
+                        enabled = True
+                        name = "edge"
+                        namespace = "edge-ingress"
+                        gatewayClassName = "istio"
+                        listeners = [{
+                            name = "https"
+                            hostname = "*.example.com"
+                            port = 443
+                            protocol = "HTTPS"
+                            tls.mode = "Terminate"
+                        }]
+                    }
+                }
+            }
+            assertResources = [
+                {
+                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                    kind = "Object"
+                    metadata.name = "test-gateway"
+                    spec.forProvider.manifest = {
+                        apiVersion = "gateway.networking.k8s.io/v1"
+                        kind = "Gateway"
+                        metadata = {
+                            name = "edge"
+                            namespace = "edge-ingress"
+                        }
+                        spec = {
+                            gatewayClassName = "istio"
+                            listeners = [{
+                                name = "https"
+                                hostname = "*.example.com"
+                                port = 443
+                                protocol = "HTTPS"
+                                tls.mode = "Terminate"
+                            }]
                         }
                     }
                 }
@@ -125,227 +163,122 @@ _items = [
     }
 
     # ==========================================================================
-    # Test 4: istiod overrideAllValues replaces defaults
+    # Test 4: ingressGateway.enabled=false drops the Gateway + ingress namespace.
     # ==========================================================================
     metav1alpha1.CompositionTest {
-        metadata.name = "override-all-values"
+        metadata.name = "ingress-gateway-disabled-skips-gateway-resource"
         spec = {
             compositionPath = "apis/istiostacks/composition.yaml"
             xrdPath = "apis/istiostacks/definition.yaml"
             timeoutSeconds = 60
             validate = False
             xr = stacksv1alpha1.IstioStack {
-                metadata.name = "override-test"
+                metadata.name = "test"
                 spec = {
                     clusterName = "my-cluster"
-                    istiod = {
-                        overrideAllValues = {fullnameOverride = "custom-istiod", pilot = {enabled = True}}
-                    }
+                    ingressGateway.enabled = False
                 }
             }
             assertResources = [
                 {
                     apiVersion = "helm.m.crossplane.io/v1beta1"
                     kind = "Release"
-                    metadata.name = "override-test-istiod"
-                    spec.forProvider.values = {
-                        fullnameOverride = "custom-istiod"
-                        pilot = {enabled = True}
-                    }
+                    metadata.name = "test-istiod"
+                }
+                {
+                    apiVersion = "hops.ops.com.ai/v1alpha1"
+                    kind = "IstioStack"
+                    metadata.name = "test"
+                    status.gateway.ready = False
                 }
             ]
         }
     }
 
     # ==========================================================================
-    # Test 5: Explicit gateways override defaults (with istiod ready)
+    # Test 5: awsLoadBalancerController.enabled puts NLB annotations on the
+    # Gateway's spec.infrastructure.annotations (Istio propagates them to the
+    # auto-created Service so the LBC provisions an NLB).
     # ==========================================================================
     metav1alpha1.CompositionTest {
-        metadata.name = "explicit-gateways"
+        metadata.name = "aws-lbc-annotations-on-gateway-infrastructure"
         spec = {
             compositionPath = "apis/istiostacks/composition.yaml"
             xrdPath = "apis/istiostacks/definition.yaml"
             timeoutSeconds = 60
             validate = False
             xr = stacksv1alpha1.IstioStack {
-                metadata.name = "custom-gw"
+                metadata.name = "test"
                 spec = {
-                    clusterName = "test-cluster"
-                    gateways = [
-                        {name = "my-ingress", type = "NodePort"}
-                    ]
-                }
-            }
-            observedResources = _istiodReady
-            assertResources = [
-                {
-                    apiVersion = "helm.m.crossplane.io/v1beta1"
-                    kind = "Release"
-                    metadata.name = "my-ingress"
-                }
-            ]
-        }
-    }
-
-    # ==========================================================================
-    # Test 6: Egress allowedHosts creates ServiceEntry objects
-    # ==========================================================================
-    metav1alpha1.CompositionTest {
-        metadata.name = "egress-allowed-hosts"
-        spec = {
-            compositionPath = "apis/istiostacks/composition.yaml"
-            xrdPath = "apis/istiostacks/definition.yaml"
-            timeoutSeconds = 60
-            validate = False
-            xr = stacksv1alpha1.IstioStack {
-                metadata.name = "egress-test"
-                spec = {
-                    clusterName = "test-cluster"
-                    egress = {
-                        allowedHosts = ["*.googleapis.com", "api.github.com"]
-                    }
-                }
-            }
-            assertResources = [
-                # ServiceEntry for wildcard host
-                {
-                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
-                    kind = "Object"
-                    metadata.name = "egress-test-egress-wildcard-googleapis-com"
-                }
-                # ServiceEntry for specific host
-                {
-                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
-                    kind = "Object"
-                    metadata.name = "egress-test-egress-api-github-com"
-                }
-            ]
-        }
-    }
-
-    # ==========================================================================
-    # Test 7a: AWS LBC releaseRef.name renders a Usage so the LBC release cannot
-    # be deleted while a LoadBalancer gateway still exists. ClusterIP gateways
-    # do NOT get a Usage. Requires gateway to be observed-ready.
-    # ==========================================================================
-    metav1alpha1.CompositionTest {
-        metadata.name = "aws-lbc-usage-protects-against-races"
-        spec = {
-            compositionPath = "apis/istiostacks/composition.yaml"
-            xrdPath = "apis/istiostacks/definition.yaml"
-            timeoutSeconds = 60
-            validate = False
-            xr = stacksv1alpha1.IstioStack {
-                metadata.name = "lbc-usage-test"
-                spec = {
-                    clusterName = "test-cluster"
-                    awsLoadBalancerController = {
+                    clusterName = "my-cluster"
+                    ingressGateway = {
                         enabled = True
-                        releaseRef.name = "pat-local"
+                        name = "platform"
+                        listeners = [{
+                            name = "https"
+                            hostname = "*.example.com"
+                            port = 443
+                            protocol = "HTTPS"
+                            tls.mode = "Terminate"
+                        }]
                     }
-                }
-            }
-            observedResources = [
-                {
-                    apiVersion = "helm.m.crossplane.io/v1beta1"
-                    kind = "Release"
-                    metadata = {
-                        name = "placeholder-istiod"
-                        annotations = {"crossplane.io/composition-resource-name" = "helm-release-istiod"}
-                    }
-                    status.conditions = [
-                        {type = "Ready", status = "True"}
-                        {type = "Synced", status = "True"}
-                    ]
-                }
-                {
-                    apiVersion = "helm.m.crossplane.io/v1beta1"
-                    kind = "Release"
-                    metadata = {
-                        name = "placeholder-ingress"
-                        annotations = {"crossplane.io/composition-resource-name" = "helm-release-gateway-istio-ingressgateway"}
-                    }
-                    status.conditions = [
-                        {type = "Ready", status = "True"}
-                        {type = "Synced", status = "True"}
-                    ]
-                }
-                {
-                    apiVersion = "helm.m.crossplane.io/v1beta1"
-                    kind = "Release"
-                    metadata = {
-                        name = "placeholder-egress"
-                        annotations = {"crossplane.io/composition-resource-name" = "helm-release-gateway-istio-egressgateway"}
-                    }
-                    status.conditions = [
-                        {type = "Ready", status = "True"}
-                        {type = "Synced", status = "True"}
-                    ]
-                }
-            ]
-            assertResources = [
-                {
-                    apiVersion = "protection.crossplane.io/v1beta1"
-                    kind = "Usage"
-                    metadata.name = "delete-istio-ingressgateway-before-aws-lbc"
-                    spec = {
-                        replayDeletion = True
-                        of.resourceRef.name = "pat-local"
-                        by.resourceRef.name = "istio-ingressgateway"
-                    }
-                }
-            ]
-        }
-    }
-
-    # ==========================================================================
-    # Test 7: AWS LBC integration adds NLB annotations to LoadBalancer gateways
-    # only — ClusterIP gateways are skipped.
-    # ==========================================================================
-    metav1alpha1.CompositionTest {
-        metadata.name = "aws-lbc-annotations-on-loadbalancer-gateways"
-        spec = {
-            compositionPath = "apis/istiostacks/composition.yaml"
-            xrdPath = "apis/istiostacks/definition.yaml"
-            timeoutSeconds = 60
-            validate = False
-            xr = stacksv1alpha1.IstioStack {
-                metadata.name = "lbc-test"
-                spec = {
-                    clusterName = "test-cluster"
                     awsLoadBalancerController = {
                         enabled = True
                         scheme = "internet-facing"
                         targetType = "ip"
                         crossZoneEnabled = True
+                        releaseRef.name = "lbc-release"
                     }
                 }
             }
-            observedResources = _istiodReady
+            assertResources = [
+                {
+                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                    kind = "Object"
+                    metadata.name = "test-gateway"
+                    spec.forProvider.manifest.spec.infrastructure.annotations = {
+                        "service.beta.kubernetes.io/aws-load-balancer-type" = "external"
+                        "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type" = "ip"
+                        "service.beta.kubernetes.io/aws-load-balancer-scheme" = "internet-facing"
+                        "service.beta.kubernetes.io/aws-load-balancer-backend-protocol" = "tcp"
+                        "service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled" = "true"
+                    }
+                }
+            ]
+        }
+    }
+
+    # ==========================================================================
+    # Test 6: providerConfigRefs default to clusterName.
+    # ==========================================================================
+    metav1alpha1.CompositionTest {
+        metadata.name = "provider-config-refs-default-to-cluster-name"
+        spec = {
+            compositionPath = "apis/istiostacks/composition.yaml"
+            xrdPath = "apis/istiostacks/definition.yaml"
+            timeoutSeconds = 60
+            validate = False
+            xr = stacksv1alpha1.IstioStack {
+                metadata.name = "test"
+                spec.clusterName = "prod-cluster"
+            }
             assertResources = [
                 {
                     apiVersion = "helm.m.crossplane.io/v1beta1"
                     kind = "Release"
-                    metadata.name = "istio-ingressgateway"
-                    spec.forProvider.values = {
-                        service = {
-                            type = "LoadBalancer"
-                            annotations = {
-                                "service.beta.kubernetes.io/aws-load-balancer-type" = "external"
-                                "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type" = "ip"
-                                "service.beta.kubernetes.io/aws-load-balancer-scheme" = "internet-facing"
-                                "service.beta.kubernetes.io/aws-load-balancer-backend-protocol" = "tcp"
-                                "service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled" = "true"
-                            }
-                        }
+                    metadata.name = "test-istiod"
+                    spec.providerConfigRef = {
+                        name = "prod-cluster"
+                        kind = "ProviderConfig"
                     }
                 }
                 {
-                    apiVersion = "helm.m.crossplane.io/v1beta1"
-                    kind = "Release"
-                    metadata.name = "istio-egressgateway"
-                    spec.forProvider.values = {
-                        service.type = "ClusterIP"
+                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                    kind = "Object"
+                    metadata.name = "test-gateway"
+                    spec.providerConfigRef = {
+                        name = "prod-cluster"
+                        kind = "ProviderConfig"
                     }
                 }
             ]

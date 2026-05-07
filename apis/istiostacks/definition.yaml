@@ -14,15 +14,15 @@ spec:
     served: true
     schema:
       openAPIV3Schema:
-        description: IstioStack installs istio-base, istiod, and gateway Helm charts.
+        description: IstioStack installs Istio in ambient dataplane mode (istio/base + istiod + ztunnel) plus an optional platform Gateway resource. Sidecar mode is not supported. Gateway API CRDs (gateway.networking.k8s.io) are a hard prerequisite — install via gateway-api-stack.
         type: object
         properties:
           spec:
-            description: IstioStackSpec defines the desired state of Istio.
+            description: IstioStackSpec defines the desired state.
             type: object
             properties:
               clusterName:
-                description: Name of the target cluster. Used as default for provider config names.
+                description: Name of the target cluster. Used as default for provider config refs.
                 type: string
               managementPolicies:
                 description: Management policies for all composed resources. Defaults to ["*"].
@@ -32,158 +32,172 @@ spec:
                 default:
                 - "*"
               labels:
-                description: Custom labels applied to all managed resources. Merged with default labels (hops.ops.com.ai/managed, hops.ops.com.ai/istio).
+                description: Custom labels applied to all managed resources.
                 type: object
                 additionalProperties:
                   type: string
                 x-kubernetes-preserve-unknown-fields: true
-              providerConfigRef:
-                description: Reference to the Helm ProviderConfig.
+              helmProviderConfigRef:
+                description: Helm ProviderConfig reference. Defaults to clusterName.
                 type: object
                 properties:
                   name:
-                    description: Name of the ProviderConfig. Defaults to clusterName.
                     type: string
                   kind:
-                    description: Kind of the ProviderConfig. Defaults to ProviderConfig.
+                    type: string
+                    enum:
+                    - ProviderConfig
+                    - ClusterProviderConfig
+              kubernetesProviderConfigRef:
+                description: Kubernetes ProviderConfig reference. Used for the Gateway resource and namespaces. Defaults to clusterName.
+                type: object
+                properties:
+                  name:
+                    type: string
+                  kind:
                     type: string
                     enum:
                     - ProviderConfig
                     - ClusterProviderConfig
               namespace:
-                description: Namespace for all Helm releases. Defaults to istio-system.
+                description: Namespace for the Istio control plane (base, istiod, ztunnel). Defaults to "istio-system".
+                type: string
+              chartVersion:
+                description: Helm chart version applied to base, istiod, and ztunnel. Defaults to "1.29.2".
                 type: string
               base:
-                description: Configuration for the istio-base Helm chart.
+                description: istio/base chart configuration.
                 type: object
                 properties:
                   values:
-                    description: Helm values merged with defaults.
                     type: object
                     x-kubernetes-preserve-unknown-fields: true
                   overrideAllValues:
-                    description: Helm values that replace all defaults.
                     type: object
                     x-kubernetes-preserve-unknown-fields: true
               istiod:
-                description: Configuration for the istiod Helm chart.
+                description: istio/istiod chart configuration. The composition forces profile=ambient — overriding it via overrideAllValues is unsupported.
                 type: object
                 properties:
                   values:
-                    description: Helm values merged with defaults.
                     type: object
                     x-kubernetes-preserve-unknown-fields: true
                   overrideAllValues:
-                    description: Helm values that replace all defaults.
                     type: object
                     x-kubernetes-preserve-unknown-fields: true
-              gateways:
-                description: List of Istio gateway instances to install. Defaults to ingress (LoadBalancer) and egress (ClusterIP) gateways.
-                type: array
-                items:
-                  type: object
-                  properties:
-                    name:
-                      description: Gateway name. Defaults to istio-ingressgateway.
-                      type: string
-                    type:
-                      description: Service type for the gateway. Defaults to LoadBalancer.
-                      type: string
-                      enum:
-                      - LoadBalancer
-                      - NodePort
-                      - ClusterIP
-                    ports:
-                      description: Custom port definitions for the gateway service.
-                      type: array
-                      items:
-                        type: object
-                        x-kubernetes-preserve-unknown-fields: true
-                    values:
-                      description: Helm values merged with defaults for this gateway.
-                      type: object
-                      x-kubernetes-preserve-unknown-fields: true
-                    overrideAllValues:
-                      description: Helm values that replace all defaults for this gateway.
-                      type: object
-                      x-kubernetes-preserve-unknown-fields: true
-              egress:
-                description: Egress traffic control. When allowedHosts is set, outbound traffic is restricted to listed hosts only (REGISTRY_ONLY mode). Requires a provider-kubernetes ProviderConfig with the same name as the Helm ProviderConfig.
+              cni:
+                description: istio/cni chart configuration. The CNI node agent is a hard prereq for ambient mode — it configures pod network namespaces for L4/L7 interception and exposes the socket ztunnel binds to.
                 type: object
                 properties:
-                  allowedHosts:
-                    description: External hosts to allow egress to (e.g. "*.googleapis.com", "api.github.com"). Creates a ServiceEntry per host allowing HTTPS on port 443.
-                    type: array
-                    items:
-                      type: string
-              awsLoadBalancerController:
-                description: AWS Load Balancer Controller integration. This stack does NOT install the controller — install it separately (see aws-lbc-stack). When enabled, NLB annotations are added to every LoadBalancer-typed gateway service so the controller provisions an NLB in TCP passthrough mode and TLS terminates inside the gateway pod (Istio).
+                  values:
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                  overrideAllValues:
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+              ztunnel:
+                description: istio/ztunnel chart configuration. ztunnel is the per-node L4 mTLS DaemonSet that ambient mode uses instead of per-pod sidecars.
+                type: object
+                properties:
+                  values:
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                  overrideAllValues:
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+              ingressGateway:
+                description: Platform Gateway API ingress configuration. When enabled, composes a Gateway resource that consumer routes (Knative HTTPRoutes, manual HTTPRoutes) attach to via parentRefs.
                 type: object
                 properties:
                   enabled:
-                    description: Whether to render LBC annotations on LoadBalancer-typed gateway services. Defaults to false.
+                    description: Whether to compose the Gateway resource. Defaults to true.
+                    type: boolean
+                    default: true
+                  name:
+                    description: metadata.name of the Gateway. Defaults to "platform".
+                    type: string
+                  namespace:
+                    description: Namespace for the Gateway resource. Defaults to "istio-ingress". The composition creates this namespace.
+                    type: string
+                  gatewayClassName:
+                    description: Gateway API GatewayClass name. Defaults to "istio" (the ambient class registered by istiod).
+                    type: string
+                  listeners:
+                    description: Gateway listener configurations. Each entry maps directly to a gateway.networking.k8s.io/v1 Gateway listener. Hostnames may include wildcards. TLS certificateRefs are typically populated dynamically by Knative auto-TLS or manual issuance.
+                    type: array
+                    items:
+                      type: object
+                      x-kubernetes-preserve-unknown-fields: true
+              awsLoadBalancerController:
+                description: AWS Load Balancer Controller integration. This stack does NOT install the controller — install separately via aws-lbc-stack. When enabled, NLB annotations are propagated to the Gateway's auto-created Service via spec.infrastructure.annotations on the Gateway resource. The LBC then provisions an NLB in TCP passthrough mode.
+                type: object
+                properties:
+                  enabled:
+                    description: Render LBC annotations on the Gateway's infrastructure.annotations. Defaults to false.
                     type: boolean
                     default: false
                   scheme:
-                    description: NLB scheme. Defaults to internet-facing.
+                    description: NLB scheme.
                     type: string
                     enum:
                     - internet-facing
                     - internal
                     default: internet-facing
                   targetType:
-                    description: NLB target type. Defaults to ip (required for Fargate / EKS Auto Mode).
+                    description: NLB target type.
                     type: string
                     enum:
                     - ip
                     - instance
                     default: ip
                   crossZoneEnabled:
-                    description: Enable cross-zone load balancing on the NLB. Defaults to true.
+                    description: Enable NLB cross-zone load balancing.
                     type: boolean
                     default: true
                   additionalAnnotations:
-                    description: Extra annotations merged into the gateway service (override or extend defaults). Useful for advanced LBC features (eip-allocations, attributes, etc.).
+                    description: Extra annotations merged into the Gateway's infrastructure.annotations.
                     type: object
                     additionalProperties:
                       type: string
                   releaseRef:
-                    description: Reference to the AWS Load Balancer Controller helm Release (composed by aws-lbc-stack). When set, emits a Usage per LoadBalancer gateway so the LBC Release cannot be deleted while a gateway still exists — the controller must outlive the gateway services so it can clean up the NLBs they own.
+                    description: aws-lbc-stack helm Release reference. When set, emits a Usage so the LBC Release cannot be deleted while the Gateway exists.
                     type: object
                     properties:
                       name:
-                        description: metadata.name of the LBC helm Release. With aws-lbc-stack defaults, this is the LBCStack XR's metadata.name.
                         type: string
             required:
             - clusterName
           status:
-            description: IstioStackStatus defines the observed state of Istio.
+            description: IstioStackStatus defines the observed state.
             type: object
             properties:
               ready:
-                description: Overall readiness of the Istio installation.
+                description: Overall readiness — base + istiod + ztunnel + (if enabled) gateway.
                 type: boolean
               base:
-                description: Status of the istio-base Helm release.
                 type: object
                 properties:
                   ready:
                     type: boolean
               istiod:
-                description: Status of the istiod Helm release.
                 type: object
                 properties:
                   ready:
                     type: boolean
-              gateways:
-                description: Status of gateway Helm releases.
-                type: array
-                items:
-                  type: object
-                  properties:
-                    name:
-                      type: string
-                    ready:
-                      type: boolean
+              cni:
+                type: object
+                properties:
+                  ready:
+                    type: boolean
+              ztunnel:
+                type: object
+                properties:
+                  ready:
+                    type: boolean
+              gateway:
+                type: object
+                properties:
+                  ready:
+                    type: boolean
         required:
         - spec

@@ -1,0 +1,38 @@
+# code: language=yaml
+#
+# Helm Release: istiod
+#
+# Istio control plane in ambient profile. The composition forces profile=ambient;
+# attempting to override via overrideAllValues is unsupported.
+#
+
+---
+apiVersion: helm.m.crossplane.io/v1beta1
+kind: Release
+metadata:
+  name: {{ $state.name }}-istiod
+  annotations:
+    {{ setResourceNameAnnotation "istiod" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  managementPolicies: {{ $state.managementPolicies | toJson }}
+  forProvider:
+    chart:
+      name: istiod
+      repository: https://istio-release.storage.googleapis.com/charts
+      version: {{ $state.chartVersion | quote }}
+    namespace: {{ $state.namespace }}
+    values:
+      profile: ambient
+      meshConfig:
+        accessLogFile: /dev/stdout
+      pilot:
+        env:
+          PILOT_ENABLE_METADATA_EXCHANGE: "true"
+      {{- if gt (len $state.istiod.values) 0 }}
+      {{- toYaml $state.istiod.values | nindent 6 }}
+      {{- end }}
+  rollbackLimit: 3
+  providerConfigRef:
+    name: {{ $state.helmProviderConfigRef.name }}
+    kind: {{ $state.helmProviderConfigRef.kind }}

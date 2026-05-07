@@ -1,0 +1,35 @@
+# code: language=yaml
+#
+# Helm Release: ztunnel
+#
+# Per-node L4 mTLS DaemonSet. Replaces the per-pod sidecar in ambient mode.
+# Chart: istio/ztunnel
+#
+
+---
+apiVersion: helm.m.crossplane.io/v1beta1
+kind: Release
+metadata:
+  name: {{ $state.name }}-ztunnel
+  annotations:
+    {{ setResourceNameAnnotation "ztunnel" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  managementPolicies: {{ $state.managementPolicies | toJson }}
+  forProvider:
+    chart:
+      name: ztunnel
+      repository: https://istio-release.storage.googleapis.com/charts
+      version: {{ $state.chartVersion | quote }}
+    namespace: {{ $state.namespace }}
+    {{- if gt (len $state.ztunnel.overrideAllValues) 0 }}
+    values:
+      {{- toYaml $state.ztunnel.overrideAllValues | nindent 6 }}
+    {{- else if gt (len $state.ztunnel.values) 0 }}
+    values:
+      {{- toYaml $state.ztunnel.values | nindent 6 }}
+    {{- end }}
+  rollbackLimit: 3
+  providerConfigRef:
+    name: {{ $state.helmProviderConfigRef.name }}
+    kind: {{ $state.helmProviderConfigRef.kind }}

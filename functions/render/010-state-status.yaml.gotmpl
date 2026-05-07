@@ -1,34 +1,39 @@
 # code: language=yaml
 #
-# Compute status values from observed state
+# Extract observed state from composed resources
 #
 
-{{- $obs := $state.observed }}
+{{- $observed := $.observed.resources | default dict }}
 
-# ==============================================================================
-# Compute per-component readiness
-# ==============================================================================
-
-{{- $baseReady := $obs.base.ready | default false }}
-{{- $istiodReady := $obs.istiod.ready | default false }}
-
-# Gateway readiness
-{{- $gatewayStatuses := list }}
-{{- $allGatewaysReady := true }}
-{{- range $gw := ($obs.gateways | default list) }}
-  {{- $gwReady := $gw.ready | default false }}
-  {{- if not $gwReady }}
-    {{- $allGatewaysReady = false }}
+{{- $checkReady := dict }}
+{{- range $key := list "control-plane-namespace" "ingress-namespace" "istio-base" "istiod" "istio-cni" "ztunnel" "gateway" }}
+  {{- $entry := get $observed $key | default dict }}
+  {{- $resource := $entry.resource | default dict }}
+  {{- $status := $resource.status | default dict }}
+  {{- $ready := false }}
+  {{- range ($status.conditions | default list) }}
+    {{- if and (eq .type "Ready") (eq .status "True") }}
+      {{- $ready = true }}
+    {{- end }}
   {{- end }}
-  {{- $gatewayStatuses = append $gatewayStatuses (dict "name" $gw.name "ready" $gwReady) }}
+  {{- $checkReady = set $checkReady $key $ready }}
 {{- end }}
 
-# Overall readiness: all components must be ready
-{{- $ready := and $baseReady $istiodReady $allGatewaysReady }}
+{{- $allReady := and (get $checkReady "istio-base") (get $checkReady "istiod") (get $checkReady "istio-cni") (get $checkReady "ztunnel") }}
+{{- if $state.ingressGateway.enabled }}
+  {{- $allReady = and $allReady (get $checkReady "gateway") }}
+{{- end }}
+
+{{- $state = set $state "observed" (dict
+  "controlPlaneNamespace" (dict "ready" (get $checkReady "control-plane-namespace"))
+  "ingressNamespace" (dict "ready" (get $checkReady "ingress-namespace"))
+  "base" (dict "ready" (get $checkReady "istio-base"))
+  "istiod" (dict "ready" (get $checkReady "istiod"))
+  "cni" (dict "ready" (get $checkReady "istio-cni"))
+  "ztunnel" (dict "ready" (get $checkReady "ztunnel"))
+  "gateway" (dict "ready" (get $checkReady "gateway"))
+) }}
 
 {{- $state = set $state "status" (dict
-  "ready" $ready
-  "base" (dict "ready" $baseReady)
-  "istiod" (dict "ready" $istiodReady)
-  "gateways" $gatewayStatuses
+  "ready" $allReady
 ) }}

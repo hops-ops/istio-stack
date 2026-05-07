@@ -1,0 +1,69 @@
+# code: language=yaml
+#
+# Gateway resource (gateway.networking.k8s.io/v1).
+# Istio's ambient Gateway controller materializes this into a Deployment + Service
+# with the gatewayClassName: istio. When awsLoadBalancerController.enabled, the
+# Gateway's spec.infrastructure.annotations get propagated to the Service so the
+# AWS LBC provisions an NLB pointed at it.
+#
+
+{{- if $state.ingressGateway.enabled }}
+---
+apiVersion: kubernetes.m.crossplane.io/v1alpha1
+kind: Object
+metadata:
+  name: {{ $state.name }}-gateway
+  annotations:
+    {{ setResourceNameAnnotation "gateway" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  managementPolicies: {{ $state.managementPolicies | toJson }}
+  forProvider:
+    manifest:
+      apiVersion: gateway.networking.k8s.io/v1
+      kind: Gateway
+      metadata:
+        name: {{ $state.ingressGateway.name }}
+        namespace: {{ $state.ingressGateway.namespace }}
+        labels: {{ $state.labels | toJson }}
+      spec:
+        gatewayClassName: {{ $state.ingressGateway.gatewayClassName }}
+        {{- if gt (len $state.ingressGateway.listeners) 0 }}
+        listeners:
+          {{- toYaml $state.ingressGateway.listeners | nindent 10 }}
+        {{- end }}
+        {{- if gt (len $state.ingressGateway.infrastructureAnnotations) 0 }}
+        infrastructure:
+          annotations:
+            {{- toYaml $state.ingressGateway.infrastructureAnnotations | nindent 12 }}
+        {{- end }}
+  providerConfigRef:
+    name: {{ $state.kubernetesProviderConfigRef.name }}
+    kind: {{ $state.kubernetesProviderConfigRef.kind }}
+
+# Deletion ordering: when LBC integration is wired, prevent the LBC Release from
+# being deleted while the Gateway still exists — without it, the auto-created
+# Service's NLB finalizer would never resolve.
+{{- $lbc := $state.awsLoadBalancerController }}
+{{- if and $lbc.enabled $lbc.releaseRef.name $state.observed.gateway.ready }}
+---
+apiVersion: protection.crossplane.io/v1beta1
+kind: Usage
+metadata:
+  name: {{ $state.name }}-delete-gateway-before-aws-lbc
+  annotations:
+    {{ setResourceNameAnnotation "usage-gateway-before-aws-lbc" }}
+spec:
+  replayDeletion: true
+  of:
+    apiVersion: helm.m.crossplane.io/v1beta1
+    kind: Release
+    resourceRef:
+      name: {{ $lbc.releaseRef.name }}
+  by:
+    apiVersion: kubernetes.m.crossplane.io/v1alpha1
+    kind: Object
+    resourceRef:
+      name: {{ $state.name }}-gateway
+{{- end }}
+{{- end }}

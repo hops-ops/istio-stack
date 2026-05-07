@@ -2,19 +2,36 @@ apiVersion: hops.ops.com.ai/v1alpha1
 kind: IstioStack
 metadata:
   name: istio
-  namespace: example-env
+  namespace: default
 spec:
-  clusterName: example-cluster
+  clusterName: prod-cluster
   labels:
     team: platform
-  namespace: istio-system
-  gateways:
-  - name: istio-ingressgateway
-    type: LoadBalancer
-  - name: istio-egressgateway
-    type: ClusterIP
+
+  ingressGateway:
+    enabled: true
+    name: platform
+    namespace: istio-ingress
+    gatewayClassName: istio
+    listeners:
+    - name: https
+      hostname: "*.example.com"
+      port: 443
+      protocol: HTTPS
+      tls:
+        mode: Terminate
+      allowedRoutes:
+        namespaces:
+          from: All
+
+  # NLB in TCP passthrough mode → TLS terminates inside the Gateway pod (Istio).
+  # The composition emits these annotations on the Gateway's spec.infrastructure.annotations,
+  # which Istio propagates to the auto-generated Service so the AWS LBC sees them.
   awsLoadBalancerController:
     enabled: true
     scheme: internet-facing
     targetType: ip
     crossZoneEnabled: true
+    # When set, emits a Usage so the LBC Release cannot be deleted while the Gateway exists.
+    releaseRef:
+      name: pat-local

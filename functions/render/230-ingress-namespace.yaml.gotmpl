@@ -1,0 +1,28 @@
+# code: language=yaml
+#
+# Namespace for the platform Gateway resource (istio-ingress by default).
+# Only emitted when ingressGateway.enabled.
+#
+
+{{- if $state.ingressGateway.enabled }}
+---
+apiVersion: kubernetes.m.crossplane.io/v1alpha1
+kind: Object
+metadata:
+  name: {{ $state.name }}-ingress-namespace
+  annotations:
+    {{ setResourceNameAnnotation "ingress-namespace" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  managementPolicies: {{ $state.managementPolicies | toJson }}
+  forProvider:
+    manifest:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: {{ $state.ingressGateway.namespace }}
+        labels: {{ $state.labels | toJson }}
+  providerConfigRef:
+    name: {{ $state.kubernetesProviderConfigRef.name }}
+    kind: {{ $state.kubernetesProviderConfigRef.kind }}
+{{- end }}

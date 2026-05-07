@@ -1,21 +1,21 @@
 # code: language=yaml
 #
-# Output XR status from $state.status
+# Output XR status
 #
 
 {{- $xr := getCompositeResource . }}
-{{- $s := $state.status }}
 ---
 apiVersion: {{ $xr.apiVersion }}
 kind: {{ $xr.kind }}
 status:
-  ready: {{ $s.ready }}
+  ready: {{ $state.status.ready }}
   base:
-    ready: {{ $s.base.ready }}
+    ready: {{ $state.observed.base.ready }}
   istiod:
-    ready: {{ $s.istiod.ready }}
-  gateways:
-  {{- range $gw := $s.gateways }}
-  - name: {{ $gw.name }}
-    ready: {{ $gw.ready }}
-  {{- end }}
+    ready: {{ $state.observed.istiod.ready }}
+  cni:
+    ready: {{ $state.observed.cni.ready }}
+  ztunnel:
+    ready: {{ $state.observed.ztunnel.ready }}
+  gateway:
+    ready: {{ $state.observed.gateway.ready }}

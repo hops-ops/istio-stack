@@ -1,0 +1,41 @@
+# code: language=yaml
+#
+# Helm Release: istio-cni
+#
+# Per-node CNI plugin DaemonSet that configures pod network namespaces for
+# ambient interception. ztunnel depends on the socket this exposes at
+# /var/run/ztunnel/ztunnel.sock — without istio-cni installed, ztunnel pods
+# stay 0/1 ready forever.
+# Chart: istio/cni
+#
+
+---
+apiVersion: helm.m.crossplane.io/v1beta1
+kind: Release
+metadata:
+  name: {{ $state.name }}-cni
+  annotations:
+    {{ setResourceNameAnnotation "istio-cni" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  managementPolicies: {{ $state.managementPolicies | toJson }}
+  forProvider:
+    chart:
+      name: cni
+      repository: https://istio-release.storage.googleapis.com/charts
+      version: {{ $state.chartVersion | quote }}
+    namespace: {{ $state.namespace }}
+    {{- if gt (len $state.cni.overrideAllValues) 0 }}
+    values:
+      {{- toYaml $state.cni.overrideAllValues | nindent 6 }}
+    {{- else }}
+    values:
+      profile: ambient
+      {{- if gt (len $state.cni.values) 0 }}
+      {{- toYaml $state.cni.values | nindent 6 }}
+      {{- end }}
+    {{- end }}
+  rollbackLimit: 3
+  providerConfigRef:
+    name: {{ $state.helmProviderConfigRef.name }}
+    kind: {{ $state.helmProviderConfigRef.kind }}

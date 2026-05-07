@@ -1,0 +1,85 @@
+# code: language=yaml
+#
+# Helm Release: istio-base
+#
+# Installs Istio CRDs, ClusterRoles, and the Istio validation webhook config.
+# Chart: istio/base
+# https://artifacthub.io/packages/helm/istio-official/base
+#
+
+---
+apiVersion: helm.m.crossplane.io/v1beta1
+kind: Release
+metadata:
+  name: {{ $state.name }}-base
+  annotations:
+    {{ setResourceNameAnnotation "istio-base" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  managementPolicies: {{ $state.managementPolicies | toJson }}
+  forProvider:
+    chart:
+      name: base
+      repository: https://istio-release.storage.googleapis.com/charts
+      version: {{ $state.chartVersion | quote }}
+    namespace: {{ $state.namespace }}
+    {{- if gt (len $state.base.overrideAllValues) 0 }}
+    values:
+      {{- toYaml $state.base.overrideAllValues | nindent 6 }}
+    {{- else }}
+    values:
+      defaultRevision: default
+      {{- if gt (len $state.base.values) 0 }}
+      {{- toYaml $state.base.values | nindent 6 }}
+      {{- end }}
+    {{- end }}
+  rollbackLimit: 3
+  providerConfigRef:
+    name: {{ $state.helmProviderConfigRef.name }}
+    kind: {{ $state.helmProviderConfigRef.kind }}
+
+# Deletion ordering: delete base AFTER its dependents (istiod, ztunnel, gateway).
+# Gate Usage emission on observed readiness so we don't render Usage objects
+# before their target Releases exist.
+{{- if and $state.observed.base.ready $state.observed.istiod.ready }}
+---
+apiVersion: protection.crossplane.io/v1beta1
+kind: Usage
+metadata:
+  name: {{ $state.name }}-delete-istiod-before-base
+  annotations:
+    {{ setResourceNameAnnotation "usage-istiod-before-base" }}
+spec:
+  replayDeletion: true
+  of:
+    apiVersion: helm.m.crossplane.io/v1beta1
+    kind: Release
+    resourceRef:
+      name: {{ $state.name }}-base
+  by:
+    apiVersion: helm.m.crossplane.io/v1beta1
+    kind: Release
+    resourceRef:
+      name: {{ $state.name }}-istiod
+{{- end }}
+{{- if and $state.observed.base.ready $state.observed.ztunnel.ready }}
+---
+apiVersion: protection.crossplane.io/v1beta1
+kind: Usage
+metadata:
+  name: {{ $state.name }}-delete-ztunnel-before-base
+  annotations:
+    {{ setResourceNameAnnotation "usage-ztunnel-before-base" }}
+spec:
+  replayDeletion: true
+  of:
+    apiVersion: helm.m.crossplane.io/v1beta1
+    kind: Release
+    resourceRef:
+      name: {{ $state.name }}-base
+  by:
+    apiVersion: helm.m.crossplane.io/v1beta1
+    kind: Release
+    resourceRef:
+      name: {{ $state.name }}-ztunnel
+{{- end }}

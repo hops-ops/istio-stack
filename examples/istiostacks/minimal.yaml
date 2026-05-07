@@ -2,6 +2,6 @@ apiVersion: hops.ops.com.ai/v1alpha1
 kind: IstioStack
 metadata:
   name: istio
-  namespace: example-env
+  namespace: default
 spec:
-  clusterName: example-cluster
+  clusterName: my-cluster

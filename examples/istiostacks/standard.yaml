@@ -2,25 +2,26 @@ apiVersion: hops.ops.com.ai/v1alpha1
 kind: IstioStack
 metadata:
   name: istio
-  namespace: example-env
+  namespace: default
 spec:
-  clusterName: example-cluster
+  clusterName: prod-cluster
   labels:
     team: platform
   namespace: istio-system
-  istiod:
-    values:
-      pilot:
-        resources:
-          requests:
-            cpu: 100m
-            memory: 128Mi
-  gateways:
-  - name: istio-ingressgateway
-    type: LoadBalancer
-  - name: istio-egressgateway
-    type: ClusterIP
-  egress:
-    allowedHosts:
-    - "*.googleapis.com"
-    - "api.github.com"
+  chartVersion: "1.29.2"
+
+  ingressGateway:
+    enabled: true
+    name: platform
+    namespace: istio-ingress
+    gatewayClassName: istio
+    listeners:
+    - name: https
+      hostname: "*.example.com"
+      port: 443
+      protocol: HTTPS
+      tls:
+        mode: Terminate
+      allowedRoutes:
+        namespaces:
+          from: All

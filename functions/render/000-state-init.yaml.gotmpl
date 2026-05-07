@@ -1,127 +1,140 @@
 # code: language=yaml
 #
-# Initialize $state namespace with spec.raw and spec.effective
-# This is the first file in the pipeline - initializes $state which subsequent files extend
+# Initialize $state with spec defaults
 #
 
 {{- $xr := getCompositeResource . }}
-{{- $metadata := $xr.metadata | default dict }}
 {{- $spec := $xr.spec | default dict }}
+{{- $metadata := $xr.metadata | default dict }}
 
 # ==============================================================================
-# Build spec.effective with all defaults applied
+# Core defaults
 # ==============================================================================
-
-# Core identification
 {{- $name := $metadata.name | default "istio" }}
 {{- $clusterName := $spec.clusterName | default $name }}
+{{- $namespace := $spec.namespace | default "istio-system" }}
+{{- $chartVersion := $spec.chartVersion | default "1.29.2" }}
 {{- $managementPolicies := $spec.managementPolicies | default (list "*") }}
 
-# Default labels: managed=true + <kind>=<name>
+# Labels
+{{- $kindKey := printf "hops.ops.com.ai/%s" (lower $xr.kind) }}
 {{- $defaultLabels := dict
   "hops.ops.com.ai/managed" "true"
-  (printf "hops.ops.com.ai/%s" (lower $xr.kind)) $name
+  $kindKey $name
 }}
-{{- $labels := merge $defaultLabels ($spec.labels | default dict) }}
+{{- $labels := mergeOverwrite (dict) $defaultLabels ($spec.labels | default dict) }}
 
 # ==============================================================================
-# Provider and namespace configuration
+# Provider config refs
 # ==============================================================================
-
-# Provider config (defaults to clusterName with ProviderConfig)
-{{- $providerConfigRef := dict
-  "name" (($spec.providerConfigRef | default dict).name | default $clusterName | default "default")
-  "kind" (($spec.providerConfigRef | default dict).kind | default "ProviderConfig")
+{{- $helmProviderConfigRef := $spec.helmProviderConfigRef | default dict }}
+{{- $helmProviderConfigRef = dict
+  "name" ($helmProviderConfigRef.name | default $clusterName)
+  "kind" ($helmProviderConfigRef.kind | default "ProviderConfig")
 }}
 
-{{- $namespace := $spec.namespace | default "istio-system" }}
+{{- $kubernetesProviderConfigRef := $spec.kubernetesProviderConfigRef | default dict }}
+{{- $kubernetesProviderConfigRef = dict
+  "name" ($kubernetesProviderConfigRef.name | default $clusterName)
+  "kind" ($kubernetesProviderConfigRef.kind | default "ProviderConfig")
+}}
 
 # ==============================================================================
-# Component configurations
+# Component values
 # ==============================================================================
+{{- $base := $spec.base | default dict }}
+{{- $istiod := $spec.istiod | default dict }}
+{{- $cni := $spec.cni | default dict }}
+{{- $ztunnel := $spec.ztunnel | default dict }}
 
-# istio-base
-{{- $baseSpec := $spec.base | default dict }}
-{{- $baseValues := $baseSpec.values | default dict }}
-{{- $baseOverrideAllValues := $baseSpec.overrideAllValues | default dict }}
+# ==============================================================================
+# Ingress Gateway
+# ==============================================================================
+{{- $ig := $spec.ingressGateway | default dict }}
+{{- $igEnabled := true }}
+{{- if hasKey $ig "enabled" }}
+  {{- $igEnabled = $ig.enabled }}
+{{- end }}
+{{- $igName := $ig.name | default "platform" }}
+{{- $igNamespace := $ig.namespace | default "istio-ingress" }}
+{{- $igGatewayClassName := $ig.gatewayClassName | default "istio" }}
+{{- $igListeners := $ig.listeners | default list }}
 
-# istiod
-{{- $istiodSpec := $spec.istiod | default dict }}
-{{- $istiodValues := $istiodSpec.values | default dict }}
-{{- $istiodOverrideAllValues := $istiodSpec.overrideAllValues | default dict }}
+# ==============================================================================
+# AWS LBC integration
+# ==============================================================================
+{{- $lbc := $spec.awsLoadBalancerController | default dict }}
+{{- $lbcEnabled := false }}
+{{- if hasKey $lbc "enabled" }}
+  {{- $lbcEnabled = $lbc.enabled }}
+{{- end }}
+{{- $lbcScheme := $lbc.scheme | default "internet-facing" }}
+{{- $lbcTargetType := $lbc.targetType | default "ip" }}
+{{- $lbcCrossZone := true }}
+{{- if hasKey $lbc "crossZoneEnabled" }}
+  {{- $lbcCrossZone = $lbc.crossZoneEnabled }}
+{{- end }}
+{{- $lbcExtraAnnotations := $lbc.additionalAnnotations | default dict }}
+{{- $lbcReleaseRef := $lbc.releaseRef | default dict }}
+{{- $lbcReleaseRefName := $lbcReleaseRef.name | default "" }}
 
-# gateways - default to ingress + egress if omitted
-{{- $rawGateways := $spec.gateways | default list }}
-{{- $gateways := list }}
-{{- if not $rawGateways }}
-  {{- $gateways = list
-    (dict "name" "istio-ingressgateway" "type" "LoadBalancer")
-    (dict "name" "istio-egressgateway" "type" "ClusterIP")
+# Compute the Gateway's infrastructure.annotations from LBC config.
+# When LBC is enabled, Istio's Gateway controller propagates these annotations
+# to the auto-generated Service so the LBC sees them and provisions an NLB.
+{{- $gatewayInfraAnnotations := dict }}
+{{- if $lbcEnabled }}
+  {{- $gatewayInfraAnnotations = dict
+    "service.beta.kubernetes.io/aws-load-balancer-type" "external"
+    "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type" $lbcTargetType
+    "service.beta.kubernetes.io/aws-load-balancer-scheme" $lbcScheme
+    "service.beta.kubernetes.io/aws-load-balancer-backend-protocol" "tcp"
+    "service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled" (printf "%t" $lbcCrossZone)
   }}
-{{- else }}
-  {{- range $gw := $rawGateways }}
-    {{- $gateways = append $gateways (dict
-      "name" ($gw.name | default "istio-ingressgateway")
-      "type" ($gw.type | default "LoadBalancer")
-      "ports" ($gw.ports | default list)
-      "values" ($gw.values | default dict)
-      "overrideAllValues" ($gw.overrideAllValues | default dict)
-    ) }}
+  {{- if $lbcExtraAnnotations }}
+    {{- $gatewayInfraAnnotations = mergeOverwrite $gatewayInfraAnnotations $lbcExtraAnnotations }}
   {{- end }}
 {{- end }}
 
-# egress
-{{- $egressSpec := $spec.egress | default dict }}
-{{- $allowedHosts := $egressSpec.allowedHosts | default list }}
-
-# AWS Load Balancer Controller integration
-{{- $lbcSpec := $spec.awsLoadBalancerController | default dict }}
-{{- $lbcEnabled := $lbcSpec.enabled | default false }}
-{{- $lbcScheme := $lbcSpec.scheme | default "internet-facing" }}
-{{- $lbcTargetType := $lbcSpec.targetType | default "ip" }}
-{{- $lbcCrossZone := true }}
-{{- if hasKey $lbcSpec "crossZoneEnabled" }}
-  {{- $lbcCrossZone = $lbcSpec.crossZoneEnabled }}
-{{- end }}
-{{- $lbcExtraAnnotations := $lbcSpec.additionalAnnotations | default dict }}
-{{- $lbcReleaseRef := $lbcSpec.releaseRef | default dict }}
-{{- $lbcReleaseRefName := $lbcReleaseRef.name | default "" }}
-
 # ==============================================================================
-# Initialize $state namespace
+# Initialize $state
 # ==============================================================================
 {{- $state := dict
-  "spec" (dict
-    "raw" $spec
-    "effective" (dict
-      "name" $name
-      "clusterName" $clusterName
-      "managementPolicies" $managementPolicies
-      "labels" $labels
-      "providerConfigRef" $providerConfigRef
-      "namespace" $namespace
-      "base" (dict
-        "values" $baseValues
-        "overrideAllValues" $baseOverrideAllValues
-      )
-      "istiod" (dict
-        "values" $istiodValues
-        "overrideAllValues" $istiodOverrideAllValues
-      )
-      "gateways" $gateways
-      "egress" (dict
-        "allowedHosts" $allowedHosts
-      )
-      "awsLoadBalancerController" (dict
-        "enabled" $lbcEnabled
-        "scheme" $lbcScheme
-        "targetType" $lbcTargetType
-        "crossZoneEnabled" $lbcCrossZone
-        "additionalAnnotations" $lbcExtraAnnotations
-        "releaseRef" (dict "name" $lbcReleaseRefName)
-      )
-    )
+  "name" $name
+  "clusterName" $clusterName
+  "namespace" $namespace
+  "chartVersion" $chartVersion
+  "managementPolicies" $managementPolicies
+  "labels" $labels
+  "helmProviderConfigRef" $helmProviderConfigRef
+  "kubernetesProviderConfigRef" $kubernetesProviderConfigRef
+  "base" (dict
+    "values" ($base.values | default dict)
+    "overrideAllValues" ($base.overrideAllValues | default dict)
+  )
+  "istiod" (dict
+    "values" ($istiod.values | default dict)
+    "overrideAllValues" ($istiod.overrideAllValues | default dict)
+  )
+  "cni" (dict
+    "values" ($cni.values | default dict)
+    "overrideAllValues" ($cni.overrideAllValues | default dict)
+  )
+  "ztunnel" (dict
+    "values" ($ztunnel.values | default dict)
+    "overrideAllValues" ($ztunnel.overrideAllValues | default dict)
+  )
+  "ingressGateway" (dict
+    "enabled" $igEnabled
+    "name" $igName
+    "namespace" $igNamespace
+    "gatewayClassName" $igGatewayClassName
+    "listeners" $igListeners
+    "infrastructureAnnotations" $gatewayInfraAnnotations
+  )
+  "awsLoadBalancerController" (dict
+    "enabled" $lbcEnabled
+    "releaseRef" (dict "name" $lbcReleaseRefName)
   )
   "observed" (dict)
-  "istio" (dict)
+  "status" (dict)
 }}
