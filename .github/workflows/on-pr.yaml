@@ -33,7 +33,7 @@ jobs:
         [
           { "example": "examples/istiostacks/minimal.yaml" },
           { "example": "examples/istiostacks/standard.yaml" },
-          { "example": "examples/istiostacks/ha.yaml" }
+          { "example": "examples/istiostacks/with-aws-lbc.yaml" }
         ]
       api_path: apis/istiostacks
       error_on_missing_schemas: true
