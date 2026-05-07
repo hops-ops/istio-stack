@@ -115,6 +115,11 @@ _items = [
                                 }
                             }
                         }
+                        # kind cluster lacks Gateway API CRDs; skip the
+                        # Gateway resource. Render tests cover compose paths.
+                        ingressGateway = {
+                            enabled = False
+                        }
                     }
                 }
             ]
