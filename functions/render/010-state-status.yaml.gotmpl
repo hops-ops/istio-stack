@@ -24,6 +24,12 @@
   {{- $allReady = and $allReady (get $checkReady "gateway") }}
 {{- end }}
 
+{{- $configuredProviders := list }}
+{{- range $ep := $state.extensionProviders }}
+  {{- $configuredProviders = append $configuredProviders $ep.name }}
+{{- end }}
+{{- $providersReady := and (get $checkReady "istiod") (gt (len $configuredProviders) 0) }}
+
 {{- $state = set $state "observed" (dict
   "controlPlaneNamespace" (dict "ready" (get $checkReady "control-plane-namespace"))
   "ingressNamespace" (dict "ready" (get $checkReady "ingress-namespace"))
@@ -32,6 +38,10 @@
   "cni" (dict "ready" (get $checkReady "istio-cni"))
   "ztunnel" (dict "ready" (get $checkReady "ztunnel"))
   "gateway" (dict "ready" (get $checkReady "gateway"))
+  "extensionProviders" (dict
+    "configured" $configuredProviders
+    "ready" $providersReady
+  )
 ) }}
 
 {{- $state = set $state "status" (dict

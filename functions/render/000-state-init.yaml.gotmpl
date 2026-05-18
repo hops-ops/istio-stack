@@ -48,6 +48,33 @@
 {{- $ztunnel := $spec.ztunnel | default dict }}
 
 # ==============================================================================
+# MeshConfig extensionProviders
+#
+# Operator-managed list. Each entry mirrors a meshConfig.extensionProviders[]
+# element. Exactly one of envoyExtAuthzHttp / envoyExtAuthzGrpc must be set.
+# Names must be unique — duplicates would silently overwrite in MeshConfig.
+# ==============================================================================
+{{- $extensionProviders := $spec.extensionProviders | default list }}
+{{- $seenNames := dict }}
+{{- range $idx, $ep := $extensionProviders }}
+  {{- if not $ep.name }}
+    {{- fail (printf "spec.extensionProviders[%d].name is required" $idx) }}
+  {{- end }}
+  {{- if hasKey $seenNames $ep.name }}
+    {{- fail (printf "spec.extensionProviders: duplicate name %q (entries must be uniquely named)" $ep.name) }}
+  {{- end }}
+  {{- $seenNames = set $seenNames $ep.name true }}
+  {{- $hasHttp := and (hasKey $ep "envoyExtAuthzHttp") (gt (len ($ep.envoyExtAuthzHttp | default dict)) 0) }}
+  {{- $hasGrpc := and (hasKey $ep "envoyExtAuthzGrpc") (gt (len ($ep.envoyExtAuthzGrpc | default dict)) 0) }}
+  {{- if and $hasHttp $hasGrpc }}
+    {{- fail (printf "spec.extensionProviders[%s]: set exactly one of envoyExtAuthzHttp or envoyExtAuthzGrpc, not both" $ep.name) }}
+  {{- end }}
+  {{- if not (or $hasHttp $hasGrpc) }}
+    {{- fail (printf "spec.extensionProviders[%s]: set exactly one of envoyExtAuthzHttp or envoyExtAuthzGrpc" $ep.name) }}
+  {{- end }}
+{{- end }}
+
+# ==============================================================================
 # Ingress Gateway
 # ==============================================================================
 {{- $ig := $spec.ingressGateway | default dict }}
@@ -135,6 +162,7 @@
     "enabled" $lbcEnabled
     "releaseRef" (dict "name" $lbcReleaseRefName)
   )
+  "extensionProviders" $extensionProviders
   "observed" (dict)
   "status" (dict)
 }}

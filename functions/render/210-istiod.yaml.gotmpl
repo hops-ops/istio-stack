@@ -26,6 +26,10 @@ spec:
       profile: ambient
       meshConfig:
         accessLogFile: /dev/stdout
+        {{- if gt (len $state.extensionProviders) 0 }}
+        extensionProviders:
+          {{- toYaml $state.extensionProviders | nindent 10 }}
+        {{- end }}
       pilot:
         env:
           PILOT_ENABLE_METADATA_EXCHANGE: "true"

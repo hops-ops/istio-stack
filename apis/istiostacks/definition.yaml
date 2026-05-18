@@ -128,6 +128,86 @@ spec:
                     items:
                       type: object
                       x-kubernetes-preserve-unknown-fields: true
+              extensionProviders:
+                description: |
+                  Istio MeshConfig extensionProviders registered on istiod. Each entry maps 1:1
+                  onto a meshConfig.extensionProviders[] element so AuthorizationPolicy.CUSTOM
+                  rules in any namespace can reference the registered provider name. Operator-
+                  managed list — consumer stacks (oauth2-proxy bridges, etc.) declare intent in
+                  their own spec, and the operator adds the matching entry here. Currently
+                  scoped to envoyExtAuthzHttp and envoyExtAuthzGrpc; broader MeshConfig knobs
+                  are out of scope for this surface. Exactly one of envoyExtAuthzHttp /
+                  envoyExtAuthzGrpc must be set per entry; render fails otherwise.
+                type: array
+                items:
+                  type: object
+                  required:
+                  - name
+                  properties:
+                    name:
+                      description: Unique provider name. AuthorizationPolicy.CUSTOM rules reference this string. Convention is <stack-namespace>-oauth2-proxy (e.g., observe-oauth2-proxy).
+                      type: string
+                    envoyExtAuthzHttp:
+                      description: HTTP ext_authz provider. Mirrors Istio MeshConfig.ExtensionProvider.EnvoyExternalAuthorizationHttpProvider.
+                      type: object
+                      required:
+                      - service
+                      - port
+                      properties:
+                        service:
+                          description: FQDN of the ext_authz service (e.g., oauth2-proxy.observe.svc.cluster.local).
+                          type: string
+                        port:
+                          description: Port of the ext_authz service.
+                          type: integer
+                        pathPrefix:
+                          description: Path prefix for the ext_authz HTTP check (e.g., /oauth2/auth).
+                          type: string
+                        timeout:
+                          description: ext_authz call timeout as a duration string (e.g., 1s, 250ms).
+                          type: string
+                        includeRequestHeadersInCheck:
+                          description: Request headers to forward to the ext_authz service.
+                          type: array
+                          items:
+                            type: string
+                        headersToUpstreamOnAllow:
+                          description: Response headers from the ext_authz service to forward upstream when the request is allowed.
+                          type: array
+                          items:
+                            type: string
+                        headersToDownstreamOnAllow:
+                          description: Response headers from the ext_authz service to forward downstream when the request is allowed.
+                          type: array
+                          items:
+                            type: string
+                        headersToDownstreamOnDeny:
+                          description: Response headers from the ext_authz service to forward downstream when the request is denied.
+                          type: array
+                          items:
+                            type: string
+                        statusOnError:
+                          description: HTTP status code returned to the downstream client when the ext_authz call fails (default 403).
+                          type: string
+                    envoyExtAuthzGrpc:
+                      description: gRPC ext_authz provider. Mirrors Istio MeshConfig.ExtensionProvider.EnvoyExternalAuthorizationGrpcProvider.
+                      type: object
+                      required:
+                      - service
+                      - port
+                      properties:
+                        service:
+                          description: FQDN of the ext_authz gRPC service.
+                          type: string
+                        port:
+                          description: Port of the ext_authz gRPC service.
+                          type: integer
+                        timeout:
+                          description: ext_authz call timeout.
+                          type: string
+                        failOpen:
+                          description: When true, allow requests if the ext_authz service is unreachable. Defaults to false (deny on error), matching Istio.
+                          type: boolean
               awsLoadBalancerController:
                 description: AWS Load Balancer Controller integration. This stack does NOT install the controller — install separately via aws-lbc-stack. When enabled, NLB annotations are propagated to the Gateway's auto-created Service via spec.infrastructure.annotations on the Gateway resource. The LBC then provisions an NLB in TCP passthrough mode.
                 type: object
@@ -198,6 +278,18 @@ spec:
                 type: object
                 properties:
                   ready:
+                    type: boolean
+              extensionProviders:
+                description: Observed state of the registered MeshConfig extensionProviders. Consumers gate AuthorizationPolicy.CUSTOM MRs on this readiness to avoid race-on-first-apply.
+                type: object
+                properties:
+                  configured:
+                    description: Names of extensionProviders that made it into the rendered istiod helm values.
+                    type: array
+                    items:
+                      type: string
+                  ready:
+                    description: True when istiod is Ready and the rendered providers match the spec list.
                     type: boolean
         required:
         - spec
