@@ -19,3 +19,6 @@ status:
     ready: {{ $state.observed.ztunnel.ready }}
   gateway:
     ready: {{ $state.observed.gateway.ready }}
+  extensionProviders:
+    configured: {{ $state.observed.extensionProviders.configured | toJson }}
+    ready: {{ $state.observed.extensionProviders.ready }}

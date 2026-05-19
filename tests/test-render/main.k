@@ -249,7 +249,211 @@ _items = [
     }
 
     # ==========================================================================
-    # Test 6: providerConfigRefs default to clusterName.
+    # Test 6a: single HTTP extensionProvider renders into meshConfig with all
+    # typed fields (service/port/path/headers/timeout/statusOnError).
+    # ==========================================================================
+    metav1alpha1.CompositionTest {
+        metadata.name = "extension-providers-http-renders-meshconfig"
+        spec = {
+            compositionPath = "apis/istiostacks/composition.yaml"
+            xrdPath = "apis/istiostacks/definition.yaml"
+            timeoutSeconds = 60
+            validate = False
+            xr = stacksv1alpha1.IstioStack {
+                metadata.name = "test"
+                spec = {
+                    clusterName = "my-cluster"
+                    extensionProviders = [{
+                        name = "observe-oauth2-proxy"
+                        envoyExtAuthzHttp = {
+                            service = "oauth2-proxy.observe.svc.cluster.local"
+                            port = 4180
+                            pathPrefix = "/oauth2/auth"
+                            timeout = "1s"
+                            includeRequestHeadersInCheck = ["authorization", "cookie"]
+                            headersToUpstreamOnAllow = ["authorization", "x-auth-request-user"]
+                            statusOnError = "403"
+                        }
+                    }]
+                }
+            }
+            assertResources = [
+                {
+                    apiVersion = "helm.m.crossplane.io/v1beta1"
+                    kind = "Release"
+                    metadata.name = "test-istiod"
+                    spec.forProvider.values.meshConfig.extensionProviders = [{
+                        name = "observe-oauth2-proxy"
+                        envoyExtAuthzHttp = {
+                            service = "oauth2-proxy.observe.svc.cluster.local"
+                            port = 4180
+                            pathPrefix = "/oauth2/auth"
+                            timeout = "1s"
+                            includeRequestHeadersInCheck = ["authorization", "cookie"]
+                            headersToUpstreamOnAllow = ["authorization", "x-auth-request-user"]
+                            statusOnError = "403"
+                        }
+                    }]
+                }
+                {
+                    apiVersion = "hops.ops.com.ai/v1alpha1"
+                    kind = "IstioStack"
+                    metadata.name = "test"
+                    status.extensionProviders.configured = ["observe-oauth2-proxy"]
+                }
+            ]
+        }
+    }
+
+    # ==========================================================================
+    # Test 6b: single gRPC extensionProvider renders the envoyExtAuthzGrpc
+    # block (different shape: failOpen instead of HTTP header lists).
+    # ==========================================================================
+    metav1alpha1.CompositionTest {
+        metadata.name = "extension-providers-grpc-renders-meshconfig"
+        spec = {
+            compositionPath = "apis/istiostacks/composition.yaml"
+            xrdPath = "apis/istiostacks/definition.yaml"
+            timeoutSeconds = 60
+            validate = False
+            xr = stacksv1alpha1.IstioStack {
+                metadata.name = "test"
+                spec = {
+                    clusterName = "my-cluster"
+                    extensionProviders = [{
+                        name = "policy-engine"
+                        envoyExtAuthzGrpc = {
+                            service = "opa.policy.svc.cluster.local"
+                            port = 9191
+                            timeout = "250ms"
+                            failOpen = False
+                        }
+                    }]
+                }
+            }
+            assertResources = [
+                {
+                    apiVersion = "helm.m.crossplane.io/v1beta1"
+                    kind = "Release"
+                    metadata.name = "test-istiod"
+                    spec.forProvider.values.meshConfig.extensionProviders = [{
+                        name = "policy-engine"
+                        envoyExtAuthzGrpc = {
+                            service = "opa.policy.svc.cluster.local"
+                            port = 9191
+                            timeout = "250ms"
+                            failOpen = False
+                        }
+                    }]
+                }
+            ]
+        }
+    }
+
+    # ==========================================================================
+    # Test 6c: multiple extensionProviders render in order; status.configured
+    # echoes the registered names.
+    # ==========================================================================
+    metav1alpha1.CompositionTest {
+        metadata.name = "extension-providers-multiple-render-in-order"
+        spec = {
+            compositionPath = "apis/istiostacks/composition.yaml"
+            xrdPath = "apis/istiostacks/definition.yaml"
+            timeoutSeconds = 60
+            validate = False
+            xr = stacksv1alpha1.IstioStack {
+                metadata.name = "test"
+                spec = {
+                    clusterName = "my-cluster"
+                    extensionProviders = [
+                        {
+                            name = "observe-oauth2-proxy"
+                            envoyExtAuthzHttp = {
+                                service = "oauth2-proxy.observe.svc.cluster.local"
+                                port = 4180
+                            }
+                        }
+                        {
+                            name = "knative-oauth2-proxy"
+                            envoyExtAuthzHttp = {
+                                service = "oauth2-proxy.knative.svc.cluster.local"
+                                port = 4180
+                            }
+                        }
+                    ]
+                }
+            }
+            assertResources = [
+                {
+                    apiVersion = "helm.m.crossplane.io/v1beta1"
+                    kind = "Release"
+                    metadata.name = "test-istiod"
+                    spec.forProvider.values.meshConfig.extensionProviders = [
+                        {
+                            name = "observe-oauth2-proxy"
+                            envoyExtAuthzHttp = {
+                                service = "oauth2-proxy.observe.svc.cluster.local"
+                                port = 4180
+                            }
+                        }
+                        {
+                            name = "knative-oauth2-proxy"
+                            envoyExtAuthzHttp = {
+                                service = "oauth2-proxy.knative.svc.cluster.local"
+                                port = 4180
+                            }
+                        }
+                    ]
+                }
+                {
+                    apiVersion = "hops.ops.com.ai/v1alpha1"
+                    kind = "IstioStack"
+                    metadata.name = "test"
+                    status.extensionProviders.configured = ["observe-oauth2-proxy", "knative-oauth2-proxy"]
+                }
+            ]
+        }
+    }
+
+    # ==========================================================================
+    # Test 6d: empty extensionProviders list leaves meshConfig unchanged
+    # (no extensionProviders key emitted) and status.configured is empty.
+    # ==========================================================================
+    metav1alpha1.CompositionTest {
+        metadata.name = "extension-providers-empty-leaves-meshconfig-clean"
+        spec = {
+            compositionPath = "apis/istiostacks/composition.yaml"
+            xrdPath = "apis/istiostacks/definition.yaml"
+            timeoutSeconds = 60
+            validate = False
+            xr = stacksv1alpha1.IstioStack {
+                metadata.name = "test"
+                spec.clusterName = "my-cluster"
+            }
+            assertResources = [
+                {
+                    apiVersion = "helm.m.crossplane.io/v1beta1"
+                    kind = "Release"
+                    metadata.name = "test-istiod"
+                    spec.forProvider.values.meshConfig = {
+                        accessLogFile = "/dev/stdout"
+                    }
+                }
+                {
+                    apiVersion = "hops.ops.com.ai/v1alpha1"
+                    kind = "IstioStack"
+                    metadata.name = "test"
+                    status.extensionProviders = {
+                        configured = []
+                        ready = False
+                    }
+                }
+            ]
+        }
+    }
+
+    # ==========================================================================
+    # Test 7: providerConfigRefs default to clusterName.
     # ==========================================================================
     metav1alpha1.CompositionTest {
         metadata.name = "provider-config-refs-default-to-cluster-name"

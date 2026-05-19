@@ -1,0 +1,34 @@
+apiVersion: hops.ops.com.ai/v1alpha1
+kind: IstioStack
+metadata:
+  name: istio
+  namespace: default
+spec:
+  clusterName: my-cluster
+
+  # MeshConfig extensionProviders registered on istiod so consumer namespaces
+  # can attach AuthorizationPolicy.CUSTOM rules that delegate to ext_authz
+  # services running in their own namespace. Operator-managed list — one entry
+  # per oauth2-proxy bridge, named <stack-namespace>-oauth2-proxy.
+  #
+  # See specs/platform-public-exposure for the architectural pattern.
+  extensionProviders:
+  - name: observe-oauth2-proxy
+    envoyExtAuthzHttp:
+      service: oauth2-proxy.observe.svc.cluster.local
+      port: 4180
+      pathPrefix: /oauth2/auth
+      timeout: 1s
+      includeRequestHeadersInCheck:
+      - authorization
+      - cookie
+      headersToUpstreamOnAllow:
+      - authorization
+      - path
+      - x-auth-request-user
+      - x-auth-request-email
+      - x-auth-request-access-token
+      headersToDownstreamOnDeny:
+      - content-type
+      - set-cookie
+      statusOnError: "403"
