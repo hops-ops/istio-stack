@@ -1,0 +1,21 @@
+### What's changed in v1.1.0
+
+* feat: typed spec.extensionProviders[] for ext_authz registrations (#30) (by @patrickleet)
+
+  Adds a typed surface on IstioStack for registering Istio MeshConfig
+  ExtensionProviders (HTTP + gRPC). Per-namespace oauth2-proxy bridges
+  declare themselves once; AuthorizationPolicy.CUSTOM rules in any
+  consumer namespace reference the registered name. Render fails with
+  actionable messages on missing name, duplicate name, both modes set,
+  or neither mode set. Status surface exposes the configured provider
+  list so consumers can gate AuthorizationPolicy MRs on readiness.
+
+  End-to-end verified on pat-local: registered smoke-test-ext-authz
+  points at a deny-403 nginx; waypoint Envoy access log shows
+  "302 UAEX ext_authz_denied" via the registered provider.
+
+  Implements [[tasks/istio-stack-extension-providers]]
+  Pattern: [[specs/platform-public-exposure]]
+
+
+See full diff: [v1.0.0...v1.1.0](https://github.com/hops-ops/istio-stack/compare/v1.0.0...v1.1.0)
