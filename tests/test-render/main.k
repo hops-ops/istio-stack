@@ -47,7 +47,10 @@ _items = [
                         chart.name = "istiod"
                         chart.version = "1.29.2"
                         namespace = "istio-system"
-                        values.profile = "ambient"
+                        values = {
+                            profile = "ambient"
+                            pilot.resources.requests = {cpu = "23m", memory = "121Mi"}
+                        }
                     }
                 }
                 {
@@ -58,6 +61,7 @@ _items = [
                         chart.name = "ztunnel"
                         chart.version = "1.29.2"
                         namespace = "istio-system"
+                        values.resources.requests = {cpu = "35m", memory = "100Mi"}
                     }
                 }
             ]

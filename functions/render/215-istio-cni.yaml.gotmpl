@@ -9,6 +9,15 @@
 # Chart: istio/cni
 #
 
+{{- $chartDefaults := dict
+  "profile" "ambient"
+  "resources" (dict
+    "requests" (dict "cpu" "15m" "memory" "100Mi")
+    "limits" (dict "cpu" "100m" "memory" "256Mi")
+  )
+}}
+{{- $mergedValues := mergeOverwrite $chartDefaults ($state.cni.values | default dict) }}
+
 ---
 apiVersion: helm.m.crossplane.io/v1beta1
 kind: Release
@@ -30,10 +39,7 @@ spec:
       {{- toYaml $state.cni.overrideAllValues | nindent 6 }}
     {{- else }}
     values:
-      profile: ambient
-      {{- if gt (len $state.cni.values) 0 }}
-      {{- toYaml $state.cni.values | nindent 6 }}
-      {{- end }}
+      {{- toYaml $mergedValues | nindent 6 }}
     {{- end }}
   rollbackLimit: 3
   providerConfigRef:
