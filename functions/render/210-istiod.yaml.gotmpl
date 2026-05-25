@@ -6,6 +6,23 @@
 # attempting to override via overrideAllValues is unsupported.
 #
 
+{{- $meshConfig := dict "accessLogFile" "/dev/stdout" }}
+{{- if gt (len $state.extensionProviders) 0 }}
+  {{- $_ := set $meshConfig "extensionProviders" $state.extensionProviders }}
+{{- end }}
+{{- $chartDefaults := dict
+  "profile" "ambient"
+  "meshConfig" $meshConfig
+  "pilot" (dict
+    "env" (dict "PILOT_ENABLE_METADATA_EXCHANGE" "true")
+    "resources" (dict
+      "requests" (dict "cpu" "23m" "memory" "121Mi")
+      "limits" (dict "cpu" "1000m" "memory" "512Mi")
+    )
+  )
+}}
+{{- $mergedValues := mergeOverwrite $chartDefaults ($state.istiod.values | default dict) }}
+
 ---
 apiVersion: helm.m.crossplane.io/v1beta1
 kind: Release
@@ -23,19 +40,7 @@ spec:
       version: {{ $state.chartVersion | quote }}
     namespace: {{ $state.namespace }}
     values:
-      profile: ambient
-      meshConfig:
-        accessLogFile: /dev/stdout
-        {{- if gt (len $state.extensionProviders) 0 }}
-        extensionProviders:
-          {{- toYaml $state.extensionProviders | nindent 10 }}
-        {{- end }}
-      pilot:
-        env:
-          PILOT_ENABLE_METADATA_EXCHANGE: "true"
-      {{- if gt (len $state.istiod.values) 0 }}
-      {{- toYaml $state.istiod.values | nindent 6 }}
-      {{- end }}
+      {{- toYaml $mergedValues | nindent 6 }}
   rollbackLimit: 3
   providerConfigRef:
     name: {{ $state.helmProviderConfigRef.name }}

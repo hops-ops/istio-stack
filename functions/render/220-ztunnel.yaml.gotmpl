@@ -6,6 +6,14 @@
 # Chart: istio/ztunnel
 #
 
+{{- $chartDefaults := dict
+  "resources" (dict
+    "requests" (dict "cpu" "35m" "memory" "100Mi")
+    "limits" (dict "cpu" "250m" "memory" "256Mi")
+  )
+}}
+{{- $mergedValues := mergeOverwrite $chartDefaults ($state.ztunnel.values | default dict) }}
+
 ---
 apiVersion: helm.m.crossplane.io/v1beta1
 kind: Release
@@ -25,9 +33,9 @@ spec:
     {{- if gt (len $state.ztunnel.overrideAllValues) 0 }}
     values:
       {{- toYaml $state.ztunnel.overrideAllValues | nindent 6 }}
-    {{- else if gt (len $state.ztunnel.values) 0 }}
+    {{- else }}
     values:
-      {{- toYaml $state.ztunnel.values | nindent 6 }}
+      {{- toYaml $mergedValues | nindent 6 }}
     {{- end }}
   rollbackLimit: 3
   providerConfigRef:
