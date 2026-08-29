@@ -13,6 +13,7 @@
 {{- $name := $metadata.name | default "istio" }}
 {{- $clusterName := $spec.clusterName | default $name }}
 {{- $namespace := $spec.namespace | default "istio-system" }}
+# renovate: datasource=helm depName=base registryUrl=https://istio-release.storage.googleapis.com/charts
 {{- $chartVersion := $spec.chartVersion | default "1.29.2" }}
 {{- $managementPolicies := $spec.managementPolicies | default (list "*") }}
 
