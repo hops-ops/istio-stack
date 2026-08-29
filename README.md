@@ -18,10 +18,10 @@ Deletion protection (Usages) ensures correct teardown order: gateways before ist
 
 - Crossplane installed in the cluster
 - Crossplane providers:
-  - `provider-helm` (>=v1.0.6)
-  - `provider-kubernetes` (>=v0.15.0) — only needed when using `egress.allowedHosts`
+  - `provider-helm` (>=v1 <v2)
+  - `provider-kubernetes` (>=v1 <v2) — only needed when using `egress.allowedHosts`
 - Crossplane function:
-  - `function-auto-ready` (>=v0.6.0)
+  - `function-auto-ready` (>=v0 <v1)
 
 ## Quick Start
 
