@@ -34,6 +34,7 @@ _items = [
                         chart = {
                             name = "base"
                             repository = "https://istio-release.storage.googleapis.com/charts"
+                            # renovate: datasource=helm depName=base registryUrl=https://istio-release.storage.googleapis.com/charts
                             version = "1.29.2"
                         }
                         namespace = "istio-system"
@@ -45,6 +46,7 @@ _items = [
                     metadata.name = "test-istiod"
                     spec.forProvider = {
                         chart.name = "istiod"
+                        # renovate: datasource=helm depName=base registryUrl=https://istio-release.storage.googleapis.com/charts
                         chart.version = "1.29.2"
                         namespace = "istio-system"
                         values = {
@@ -59,6 +61,7 @@ _items = [
                     metadata.name = "test-ztunnel"
                     spec.forProvider = {
                         chart.name = "ztunnel"
+                        # renovate: datasource=helm depName=base registryUrl=https://istio-release.storage.googleapis.com/charts
                         chart.version = "1.29.2"
                         namespace = "istio-system"
                         values.resources.requests = {cpu = "35m", memory = "100Mi"}
