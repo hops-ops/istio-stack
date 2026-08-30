@@ -9,7 +9,7 @@ spec:
     team: platform
   namespace: istio-system
   # renovate: datasource=helm depName=base registryUrl=https://istio-release.storage.googleapis.com/charts
-  chartVersion: "1.29.2"
+  chartVersion: "1.30.4"
 
   ingressGateway:
     enabled: true
